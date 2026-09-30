@@ -20,7 +20,15 @@
 ---@field keep_terminal_focus boolean Keep focus in terminal after opening diff
 ---@field hide_terminal_in_new_tab boolean Hide Claude terminal in newly created diff tab
 ---@field on_new_file_reject ClaudeCodeNewFileRejectBehavior Behavior when rejecting a new-file diff
+---@field inline_keymaps? ClaudeCodeInlineKeymaps Buffer-local keys active while reviewing an inline (in-place) diff
 ---@field auto_resize_terminal boolean Let the plugin resize the Claude terminal across the diff lifecycle (default true); set false to own width via the ClaudeCodeDiffOpened/Closed User autocmds
+
+-- Keys for reviewing an in-place inline diff (layout = "inline"); set any to false to disable
+---@class ClaudeCodeInlineKeymaps
+---@field next_hunk? string|false
+---@field prev_hunk? string|false
+---@field accept_hunk? string|false
+---@field reject_hunk? string|false
 
 -- Model selection option
 ---@class ClaudeCodeModelOption
@@ -31,7 +39,7 @@
 ---@alias ClaudeCodeLogLevel "trace"|"debug"|"info"|"warn"|"error"
 
 -- Diff layout type alias
----@alias ClaudeCodeDiffLayout "vertical"|"horizontal"|"unified"
+---@alias ClaudeCodeDiffLayout "vertical"|"horizontal"|"unified"|"inline"
 
 -- Behavior when rejecting new-file diffs
 ---@alias ClaudeCodeNewFileRejectBehavior "keep_empty"|"close_window"

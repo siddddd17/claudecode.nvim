@@ -376,11 +376,14 @@ For deep technical details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
     -- Diff Integration
     diff_opts = {
-      layout = "vertical", -- "vertical" (default), "horizontal", or "unified"
+      layout = "vertical", -- "vertical" (default), "horizontal", "unified", or "inline"
       -- "unified": VS Code-style unified diff in a single buffer with deleted
       --   (red/strikethrough) and added (green) lines interleaved. Requires
       --   Neovim >= 0.9.0. Highlight groups are customizable: ClaudeCodeInlineDiffAdd,
       --   ClaudeCodeInlineDiffDelete, ClaudeCodeInlineDiffAddSign, ClaudeCodeInlineDiffDeleteSign.
+      -- "inline": Cursor-style review in the file's own buffer and window (no extra
+      --   pane). See "Inline diff review" below. Uses the same highlight groups.
+      -- inline_keymaps = { next_hunk = "]c", prev_hunk = "[c", accept_hunk = "<leader>ay", reject_hunk = "<leader>an" },
       open_in_new_tab = false,
       keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens
       hide_terminal_in_new_tab = false,
@@ -397,6 +400,35 @@ For deep technical details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
   },
 }
 ```
+
+### Inline diff review
+
+With `diff_opts = { layout = "inline" }`, Claude's proposed edit is shown directly in
+the file you are working on, in the window you already have open:
+
+- Proposed lines are real buffer lines, highlighted green with a `+` sign. You can
+  edit them before accepting.
+- Removed lines appear in red above the spot they came from, as virtual text. They
+  are never part of the file's content.
+- Each change (hunk) can be decided on its own. When every hunk has been decided,
+  the whole diff finishes automatically: accepted if you kept at least one hunk,
+  rejected if you rejected them all.
+
+| Action                     | Default key  | Command                 |
+| -------------------------- | ------------ | ----------------------- |
+| Next / previous change     | `]c` / `[c`  |                         |
+| Accept change under cursor | `<leader>ay` | `:ClaudeCodeHunkAccept` |
+| Reject change under cursor | `<leader>an` | `:ClaudeCodeHunkReject` |
+| Accept the whole file      | `:w`         | `:ClaudeCodeDiffAccept` |
+| Reject the whole file      |              | `:ClaudeCodeDiffDeny`   |
+
+Keys are buffer-local and only exist while a diff is under review; any mapping of
+your own on the same key (for example gitsigns' `]c`) is restored afterwards.
+Change or disable them with `diff_opts.inline_keymaps` (set an entry to `false`).
+
+Accepting sends the buffer's current text to Claude, including any edits you made
+while reviewing. Rejecting puts the original text back. `open_in_new_tab` is not
+used by this layout.
 
 ### Diff Lifecycle Events
 

@@ -132,9 +132,23 @@ function M.validate(config)
     assert(
       config.diff_opts.layout == "vertical"
         or config.diff_opts.layout == "horizontal"
-        or config.diff_opts.layout == "unified",
-      "diff_opts.layout must be 'vertical', 'horizontal', or 'unified'"
+        or config.diff_opts.layout == "unified"
+        or config.diff_opts.layout == "inline",
+      "diff_opts.layout must be 'vertical', 'horizontal', 'unified', or 'inline'"
     )
+  end
+  if config.diff_opts.inline_keymaps ~= nil then
+    assert(type(config.diff_opts.inline_keymaps) == "table", "diff_opts.inline_keymaps must be a table")
+    for name, lhs in pairs(config.diff_opts.inline_keymaps) do
+      assert(
+        name == "next_hunk" or name == "prev_hunk" or name == "accept_hunk" or name == "reject_hunk",
+        "diff_opts.inline_keymaps: unknown key '" .. tostring(name) .. "'"
+      )
+      assert(
+        lhs == false or type(lhs) == "string",
+        "diff_opts.inline_keymaps." .. tostring(name) .. " must be a string or false"
+      )
+    end
   end
   if config.diff_opts.open_in_new_tab ~= nil then
     assert(type(config.diff_opts.open_in_new_tab) == "boolean", "diff_opts.open_in_new_tab must be a boolean")

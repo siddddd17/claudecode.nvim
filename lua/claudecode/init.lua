@@ -1148,6 +1148,19 @@ function M._create_commands()
     desc = "Deny/reject the current diff changes",
   })
 
+  -- Per-hunk review for diff_opts.layout = "inline"
+  vim.api.nvim_create_user_command("ClaudeCodeHunkAccept", function()
+    require("claudecode.diff_inplace").accept_hunk()
+  end, {
+    desc = "Accept the proposed change under the cursor (inline diff)",
+  })
+
+  vim.api.nvim_create_user_command("ClaudeCodeHunkReject", function()
+    require("claudecode.diff_inplace").reject_hunk()
+  end, {
+    desc = "Reject the proposed change under the cursor (inline diff)",
+  })
+
   vim.api.nvim_create_user_command("ClaudeCodeCloseAllDiffs", function()
     -- Pending only: a status="saved" diff holds the user's :w'd edits in its
     -- proposed buffer until Claude writes the file, and closing it would discard

@@ -845,6 +845,12 @@ function M._resolve_diff_as_saved(tab_name, buffer_id)
     return
   end
 
+  -- Dispatch to in-place inline diff handler
+  if diff_data.layout == "inline" then
+    require("claudecode.diff_inplace").resolve_as_saved(tab_name, diff_data)
+    return
+  end
+
   logger.debug("diff", "Accepting diff for", tab_name)
 
   -- Get content from buffer
@@ -936,6 +942,12 @@ function M._resolve_diff_as_rejected(tab_name)
   if diff_data.layout == "unified" then
     local inline = require("claudecode.diff_inline")
     inline.resolve_inline_as_rejected(tab_name, diff_data)
+    return
+  end
+
+  -- Dispatch to in-place inline diff handler
+  if diff_data.layout == "inline" then
+    require("claudecode.diff_inplace").resolve_as_rejected(tab_name, diff_data)
     return
   end
 
@@ -1166,10 +1178,13 @@ function M._cleanup_diff_state(tab_name, reason)
     return
   end
 
-  -- Dispatch to unified diff handler
-  if diff_data.layout == "unified" then
-    local inline = require("claudecode.diff_inline")
-    inline.cleanup_inline_diff(tab_name, diff_data)
+  -- Dispatch to unified / in-place inline diff handlers
+  if diff_data.layout == "unified" or diff_data.layout == "inline" then
+    if diff_data.layout == "inline" then
+      require("claudecode.diff_inplace").cleanup(tab_name, diff_data)
+    else
+      require("claudecode.diff_inline").cleanup_inline_diff(tab_name, diff_data)
+    end
     active_diffs[tab_name] = nil
     fire_diff_event("ClaudeCodeDiffClosed", {
       tab_name = tab_name,
@@ -1320,10 +1335,14 @@ function M._setup_blocking_diff(params, resolution_callback)
       end
     end
 
-    -- Dispatch to unified diff if configured
-    if config and config.diff_opts and config.diff_opts.layout == "unified" then
-      local inline = require("claudecode.diff_inline")
-      inline.setup_inline_diff(params, resolution_callback, config)
+    -- Dispatch to unified (separate pane) or in-place inline diff if configured
+    local single_buffer_layout = config and config.diff_opts and config.diff_opts.layout
+    if single_buffer_layout == "unified" or single_buffer_layout == "inline" then
+      if single_buffer_layout == "inline" then
+        require("claudecode.diff_inplace").setup_inplace_diff(params, resolution_callback, config)
+      else
+        require("claudecode.diff_inline").setup_inline_diff(params, resolution_callback, config)
+      end
 
       local state = active_diffs[tab_name]
       if state then

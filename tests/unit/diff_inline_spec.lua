@@ -377,7 +377,7 @@ describe("Inline diff module", function()
       assert_contains(tostring(err), "'unified'")
     end)
 
-    it("should reject the former layout = 'inline' (renamed to 'unified')", function()
+    it("should accept layout = 'inline' (the in-place overlay reserved in #293)", function()
       package.loaded["claudecode.config"] = nil
       package.loaded["claudecode.terminal"] = nil
       package.loaded["claudecode.terminal"] = {
@@ -399,8 +399,7 @@ describe("Inline diff module", function()
       local success, err = pcall(function()
         config.apply({ diff_opts = { layout = "inline" } })
       end)
-      assert.is_false(success)
-      assert_contains(tostring(err), "'unified'")
+      assert.is_true(success, tostring(err))
     end)
   end)
 

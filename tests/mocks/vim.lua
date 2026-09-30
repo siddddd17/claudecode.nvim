@@ -1008,7 +1008,13 @@ local vim = {
             if count_a == 0 then
               hunk_start_a = start_a - 1
             end
-            table.insert(hunks, { hunk_start_a, count_a, start_b, count_b })
+            -- Symmetrically, for pure deletions (count_b == 0) real vim.diff reports
+            -- start_b as the new-side line *before* the removed block (0 at the top).
+            local hunk_start_b = start_b
+            if count_b == 0 then
+              hunk_start_b = start_b - 1
+            end
+            table.insert(hunks, { hunk_start_a, count_a, hunk_start_b, count_b })
           end
         end
       end
