@@ -111,6 +111,15 @@ function M.join_content(lines, reference)
   return content
 end
 
+---Close the current undo block so the next change becomes its own undo step
+---(`:h undo-break`: setting 'undolevels' to itself ends the block).
+---@param buf integer
+local function break_undo(buf)
+  vim.api.nvim_buf_call(buf, function()
+    vim.cmd("let &l:undolevels = &l:undolevels")
+  end)
+end
+
 -- ── Hunk tracking ─────────────────────────────────────────────────
 
 ---Current 0-based [start, end) row range of a tracked hunk, or nil if its mark is gone.
@@ -351,7 +360,9 @@ function M.reject_hunk(buf)
   pcall(vim.api.nvim_buf_del_extmark, buf, ns_track, hunk.mark_id)
   hunk.status = "rejected"
   diff_data.applying = true
+  break_undo(buf)
   vim.api.nvim_buf_set_lines(buf, start_row, end_row, false, hunk.old_lines)
+  break_undo(buf)
   diff_data.applying = false
   M.render(buf, diff_data)
   maybe_finish(tab_name, diff_data)
@@ -505,6 +516,43 @@ local function window_showing(buf)
   return nil
 end
 
+-- ── Undo guard ────────────────────────────────────────────────────
+
+---Keep undo from walking past Claude's proposal.
+---
+---The proposal is applied as one change to the real buffer, so a plain `u` would
+---silently swap back to the original text while the review (and its markers) stays
+---open. When undo reaches below the proposal, re-apply it, reset every hunk to
+---pending, and point the user at reject instead.
+---@param buf integer
+---@param diff_data table
+---@return boolean restored true if the proposal was re-applied
+function M.guard_undo(buf, diff_data)
+  if not diff_data.base_seq then
+    return false
+  end
+  local seq = vim.api.nvim_buf_call(buf, function()
+    return vim.fn.undotree().seq_cur
+  end)
+  if seq >= diff_data.base_seq then
+    return false
+  end
+  diff_data.applying = true
+  vim.api.nvim_buf_call(buf, function()
+    vim.cmd("silent undo " .. diff_data.base_seq)
+  end)
+  diff_data.applying = false
+  vim.api.nvim_buf_clear_namespace(buf, ns_track, 0, -1)
+  place_tracking_marks(buf, diff_data.hunks)
+  -- Deferred + redraw so the hint replaces undo's own message instead of stacking
+  -- with it (which would raise a hit-enter prompt).
+  vim.schedule(function()
+    vim.cmd("redraw")
+    vim.notify("Undo stops at Claude's proposal; reject it with :ClaudeCodeDiffDeny", vim.log.levels.INFO)
+  end)
+  return true
+end
+
 -- ── Setup ─────────────────────────────────────────────────────────
 
 ---Open an in-place inline diff.
@@ -565,14 +613,29 @@ function M.setup_inplace_diff(params, resolution_callback, config)
   end
   local previous_win_buf = vim.api.nvim_win_get_buf(win)
   vim.api.nvim_win_set_buf(win, buf)
-  pcall(vim.api.nvim_set_option_value, "signcolumn", "yes", { win = win })
+
+  -- Show the sign column in every window on this buffer, remembering each
+  -- window's own setting so cleanup can put it back.
+  local signcolumns = {}
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(w) == buf then
+      signcolumns[w] = vim.wo[w].signcolumn
+      pcall(vim.api.nvim_set_option_value, "signcolumn", "yes", { win = w })
+    end
+  end
 
   -- Apply the proposal to the real buffer.
   local new_lines = M.split_lines(params.new_file_contents)
   local hunks = M.compute_hunks(old_text, params.new_file_contents)
   local state = { hunks = hunks, applying = true }
+  break_undo(buf)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, new_lines)
+  break_undo(buf)
   state.applying = false
+  -- Undo sequence number of the applied proposal: undo must not go below it (see TextChanged).
+  local base_seq = vim.api.nvim_buf_call(buf, function()
+    return vim.fn.undotree().seq_cur
+  end)
   place_tracking_marks(buf, hunks)
   M.render(buf, state)
 
@@ -611,9 +674,11 @@ function M.setup_inplace_diff(params, resolution_callback, config)
     buffer = buf,
     callback = function()
       local data = diff._get_active_diffs()[tab_name]
-      if data and data.status == "pending" and not data.applying then
-        M.render(buf, data)
+      if not (data and data.status == "pending" and not data.applying) then
+        return
       end
+      M.guard_undo(buf, data)
+      M.render(buf, data)
     end,
   })
 
@@ -643,6 +708,8 @@ function M.setup_inplace_diff(params, resolution_callback, config)
     original_lines = original_lines,
     hunks = hunks,
     applying = false,
+    base_seq = base_seq,
+    signcolumns = signcolumns,
     keymaps = keymaps,
     is_new_file = is_new_file,
     autocmd_ids = autocmd_ids,
@@ -772,6 +839,13 @@ function M.cleanup(tab_name, diff_data)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end
   end
+
+  for w, value in pairs(diff_data.signcolumns or {}) do
+    if vim.api.nvim_win_is_valid(w) then
+      pcall(vim.api.nvim_set_option_value, "signcolumn", value, { win = w })
+    end
+  end
+  diff_data.signcolumns = nil
 
   if diff_data.fallback_window and vim.api.nvim_win_is_valid(diff_data.fallback_window) then
     if diff_data.status == "rejected" then

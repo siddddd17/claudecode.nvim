@@ -430,6 +430,11 @@ Accepting sends the buffer's current text to Claude, including any edits you mad
 while reviewing. Rejecting puts the original text back. `open_in_new_tab` is not
 used by this layout.
 
+Undo works normally for your own edits during review, but stops at Claude's
+proposal: to discard it, reject it instead. The `:w` that accepts does not run
+format-on-save, so Claude receives exactly the text you reviewed; your formatter
+runs again on your next normal save.
+
 ### Diff Lifecycle Events
 
 The plugin fires `User` autocmds when a diff opens and closes, so you can react to
