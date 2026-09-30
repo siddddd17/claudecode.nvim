@@ -12,7 +12,6 @@
 --   nvim --headless -u NONE -l tests/manual/inline_diff_scenarios.lua
 -- Exit code is 0 when every check passes.
 vim.opt.rtp:prepend(vim.fn.getcwd())
-vim.o.columns = 120
 vim.o.swapfile = false
 vim.g.mapleader = " "
 
@@ -118,10 +117,10 @@ scenario("1. format-on-save (LazyVim/conform style) around an accept", function(
     end,
   })
 
-  vim.cmd("edit " .. path)
+  vim.cmd("silent edit " .. path)
   local buf = vim.api.nvim_get_current_buf()
   local box = propose(path, PROPOSED, "fmt")
-  vim.cmd("write") -- the user accepts with :w
+  vim.cmd("silent write") -- the user accepts with :w
   check(box.result and box.result.content[1].text == "FILE_SAVED", ":w accepts the diff")
   check(formatter_runs == 0, "formatter does NOT run on the accepting :w (got " .. formatter_runs .. " runs)")
   check(
@@ -137,7 +136,7 @@ scenario("1. format-on-save (LazyVim/conform style) around an accept", function(
 
   -- After review, :w is a normal save again and the formatter runs.
   vim.api.nvim_buf_set_lines(buf, 0, 0, false, { "-- touched" })
-  vim.cmd("write")
+  vim.cmd("silent write")
   check(formatter_runs == 1, "formatter runs again on the next normal :w")
   check(read(path) == "-- touched\nlocal x = 1\nlocal y=2\nreturn x+y\n", "normal :w writes formatted text to disk")
   vim.api.nvim_del_autocmd(fmt_id)
@@ -148,9 +147,9 @@ scenario("2. two files under review at the same time", function()
   local a, b = root .. "/notes.md", root .. "/CHANGELOG.md"
   write(a, "# Notes\nWidget is great.\n")
   write(b, "# Changelog\n- Added Widget\n")
-  vim.cmd("edit " .. a)
+  vim.cmd("silent edit " .. a)
   local abuf = vim.api.nvim_get_current_buf()
-  vim.cmd("vsplit " .. b)
+  vim.cmd("silent vsplit " .. b)
   local bbuf = vim.api.nvim_get_current_buf()
 
   local box_a = propose(a, "# Notes\nGadget is great.\n", "A")
@@ -161,7 +160,7 @@ scenario("2. two files under review at the same time", function()
 
   -- Accept A only.
   vim.api.nvim_set_current_buf(abuf)
-  vim.cmd("write")
+  vim.cmd("silent write")
   check(box_a.result and box_a.result.content[1].text == "FILE_SAVED", "A accepted")
   check(box_b.result == nil, "deciding A does not resolve B")
   check(marks(bbuf) > 0, "B keeps its markers after A is accepted")
@@ -186,7 +185,7 @@ scenario("3. undo during review", function()
   local ORIGINAL = "alpha\nbeta\ngamma\n"
   local PROPOSED = "alpha\nBETA\ngamma\ndelta\n"
   write(path, ORIGINAL)
-  vim.cmd("edit " .. path)
+  vim.cmd("silent edit " .. path)
   local buf = vim.api.nvim_get_current_buf()
   local box = propose(path, PROPOSED, "U")
 
@@ -216,7 +215,7 @@ scenario("3. undo during review", function()
 
   -- Accept: whatever is in the buffer is what Claude gets.
   local expected = text(buf)
-  vim.cmd("write")
+  vim.cmd("silent write")
   check(box.result and box.result.content[2].text == expected, "accepted text equals what the buffer showed")
   claude_finishes(path, box, "U")
   check(read(path) == expected, "disk matches the reviewed buffer")
@@ -228,7 +227,7 @@ scenario("4. Claude stopped mid-review (Ctrl+C / closing Claude)", function()
   local path = root .. "/stopped.py"
   local ORIGINAL = "def f():\n    return 1\n"
   write(path, ORIGINAL)
-  vim.cmd("edit " .. path)
+  vim.cmd("silent edit " .. path)
   local buf = vim.api.nvim_get_current_buf()
   local win = vim.api.nvim_get_current_win()
   local signcolumn_before = vim.wo[win].signcolumn
@@ -252,7 +251,7 @@ scenario("4. Claude stopped mid-review (Ctrl+C / closing Claude)", function()
   -- A second client's diff is not touched by the first client disconnecting.
   local other = root .. "/other.py"
   write(other, "x = 1\n")
-  vim.cmd("edit " .. other)
+  vim.cmd("silent edit " .. other)
   local obuf = vim.api.nvim_get_current_buf()
   local obox = propose(other, "x = 2\n", "O", "client-2")
   diff.close_diffs_for_client("client-1", "client disconnected")
@@ -267,9 +266,9 @@ scenario("5. same file open in two splits", function()
   local ORIGINAL = "const a = 1;\nconst b = 2;\n"
   local PROPOSED = "const a = 1;\nconst b = 3;\nconst c = 4;\n"
   write(path, ORIGINAL)
-  vim.cmd("edit " .. path)
+  vim.cmd("silent edit " .. path)
   local buf = vim.api.nvim_get_current_buf()
-  vim.cmd("vsplit")
+  vim.cmd("silent vsplit")
   local wins = {}
   for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if vim.api.nvim_win_get_buf(w) == buf then
@@ -297,7 +296,7 @@ scenario("5. same file open in two splits", function()
   vim.api.nvim_buf_set_lines(buf, 2, 3, false, { "const c = 5;" })
   vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
   vim.api.nvim_set_current_win(wins[2])
-  vim.cmd("write")
+  vim.cmd("silent write")
   local expected = "const a = 1;\nconst b = 3;\nconst c = 5;\n"
   check(box.result and box.result.content[2].text == expected, "edit made in window 1 is in the accepted text")
   claude_finishes(path, box, "V")
@@ -305,6 +304,33 @@ scenario("5. same file open in two splits", function()
   for i, w in ipairs(wins) do
     check(vim.wo[w].signcolumn == before[w], "window " .. i .. " sign column restored")
   end
+end)
+
+-- ── 6. Change at the very top of the file ─────────────────────────
+scenario("6. deleted lines above line 1 stay visible (all splits, after undo)", function()
+  local path = root .. "/top.py"
+  write(path, "def old():\n    pass\n\nprint(1)\n")
+  vim.cmd("silent edit " .. path)
+  local buf = vim.api.nvim_get_current_buf()
+  vim.cmd("silent vsplit")
+  local function all_windows_show_filler()
+    local n, ok = 0, true
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_get_buf(w) == buf then
+        n = n + 1
+        local view = vim.api.nvim_win_call(w, vim.fn.winsaveview)
+        ok = ok and view.topfill == 2
+      end
+    end
+    return n == 2 and ok
+  end
+  local box = propose(path, "def new():\n    return 1\n\nprint(1)\n", "T")
+  check(all_windows_show_filler(), "both splits show the 2 deleted lines above line 1")
+  user_types_undo(buf)
+  check(all_windows_show_filler(), "still shown after a blocked undo")
+  diff.deny_current_diff()
+  claude_finishes(path, box, "T")
+  check(read(path) == "def old():\n    pass\n\nprint(1)\n", "rejected, file unchanged")
 end)
 
 -- ── report ────────────────────────────────────────────────────────

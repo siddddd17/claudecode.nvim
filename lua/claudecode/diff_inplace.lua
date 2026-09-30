@@ -194,7 +194,16 @@ function M.render(buf, state)
   end
   vim.api.nvim_buf_clear_namespace(buf, ns_render, 0, -1)
   local line_count = vim.api.nvim_buf_line_count(buf)
-  local width = math.max(vim.o.columns, 20)
+  -- Pad deleted lines to the text area of the narrowest window showing this buffer,
+  -- so the red bar reads as a full line without drawing past any window's edge.
+  local width
+  for _, info in ipairs(vim.fn.getwininfo()) do
+    if info.bufnr == buf then
+      local text_width = info.width - (info.textoff or 0)
+      width = width and math.min(width, text_width) or text_width
+    end
+  end
+  width = math.max((width or 80) - 1, 1)
 
   for _, hunk in ipairs(state.hunks) do
     if hunk.status == "pending" then
@@ -375,7 +384,40 @@ end
 ---@param win integer
 ---@param buf integer
 ---@param entry table { hunk, start_row, end_row }
-local function reveal(win, buf, entry)
+---Show deleted lines that sit above line 1. Neovim draws those only as "filler"
+---when a window's view asks for it, so every window on the buffer that is at the
+---top of the file gets its `topfill` set.
+---@param buf integer
+---@param state table
+local function show_top_filler(buf, state)
+  local n_old = 0
+  for _, entry in ipairs(pending_hunks(buf, state)) do
+    if entry.start_row == 0 and not entry.hunk.at_eof then
+      n_old = #entry.hunk.old_lines
+      break
+    end
+  end
+  if n_old == 0 then
+    return
+  end
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(w) == buf then
+      vim.api.nvim_win_call(w, function()
+        if vim.fn.line("w0") == 1 then
+          vim.fn.winrestview({ topline = 1, topfill = n_old })
+        end
+      end)
+    end
+  end
+end
+M._show_top_filler = show_top_filler
+
+---Move the cursor to a hunk and make sure its deleted-line preview is on screen.
+---@param win integer
+---@param buf integer
+---@param entry table { hunk, start_row, end_row }
+---@param state table
+local function reveal(win, buf, entry, state)
   if not (win and vim.api.nvim_win_is_valid(win)) then
     return
   end
@@ -387,6 +429,9 @@ local function reveal(win, buf, entry)
     vim.api.nvim_win_call(win, function()
       vim.fn.winrestview({ topline = 1, topfill = n_old })
     end)
+  end
+  if state then
+    show_top_filler(buf, state)
   end
 end
 M._reveal = reveal
@@ -424,7 +469,7 @@ function M.jump(direction, buf)
     end
     target = target or list[#list]
   end
-  reveal(vim.api.nvim_get_current_win(), buf, target)
+  reveal(vim.api.nvim_get_current_win(), buf, target, diff_data)
   return true
 end
 
@@ -544,6 +589,7 @@ function M.guard_undo(buf, diff_data)
   diff_data.applying = false
   vim.api.nvim_buf_clear_namespace(buf, ns_track, 0, -1)
   place_tracking_marks(buf, diff_data.hunks)
+  show_top_filler(buf, diff_data)
   -- Deferred + redraw so the hint replaces undo's own message instead of stacking
   -- with it (which would raise a hit-enter prompt).
   vim.schedule(function()
@@ -645,7 +691,7 @@ function M.setup_inplace_diff(params, resolution_callback, config)
   -- Jump to the first change.
   local first = pending_hunks(buf, state)[1]
   if first then
-    reveal(win, buf, first)
+    reveal(win, buf, first, state)
   end
 
   local keymaps = set_keymaps(buf, config and config.diff_opts and config.diff_opts.inline_keymaps)

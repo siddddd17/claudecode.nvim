@@ -2,7 +2,6 @@
 -- End-to-end check of diff_opts.layout = "inline" in a real (headless) Neovim.
 -- Run: nvim --headless -u NONE -l tests/manual/inline_diff_e2e.lua
 vim.opt.rtp:prepend(vim.fn.getcwd())
-vim.o.columns = 100
 vim.g.mapleader = " "
 
 local diff = require("claudecode.diff")
@@ -57,7 +56,7 @@ local PROPOSED = "local a = 1\nlocal b = 20\nlocal c = 3\nlocal d = 4\nreturn a 
 -- 1. Opening: proposal lands in the file's own buffer, no extra window, no diff mode.
 local path = tmp .. "/sample.lua"
 write(path, ORIGINAL)
-vim.cmd("edit " .. path)
+vim.cmd("silent edit " .. path)
 local buf = vim.api.nvim_get_current_buf()
 local wins_before = #vim.api.nvim_tabpage_list_wins(0)
 local result = open(path, PROPOSED, "t1")
@@ -80,7 +79,7 @@ check(vim.api.nvim_win_get_cursor(0)[1] == 2, "cursor on first hunk (line 2)")
 check(inplace.reject_hunk(), "reject first hunk")
 check(lines(buf)[2] == "local b = 2", "rejected hunk restores original line")
 check(diff._get_active_diffs()["t1"].status == "pending", "diff still pending with a hunk left")
-vim.cmd("write")
+vim.cmd("silent write")
 local r = result()
 check(r and r.content[1].text == "FILE_SAVED", ":w accepts the diff")
 local expected = "local a = 1\nlocal b = 2\nlocal c = 3\nlocal d = 42 -- tweaked\nreturn a + b + d\n"
@@ -98,7 +97,7 @@ check(vim.b[buf].claudecode_diff_tab_name == nil, "buffer vars cleared")
 
 -- 3. Reject whole diff restores the original text.
 write(path, ORIGINAL)
-vim.cmd("edit!")
+vim.cmd("silent edit!")
 result = open(path, PROPOSED, "t2")
 diff.deny_current_diff()
 r = result()
@@ -119,7 +118,7 @@ check(r and r.content[1].text == "FILE_SAVED", "accepting all hunks auto-accepts
 check(r and r.content[2].text == PROPOSED, "all-accepted content equals the proposal")
 diff.close_diff_by_tab_name("t3")
 write(path, ORIGINAL)
-vim.cmd("edit!")
+vim.cmd("silent edit!")
 
 result = open(path, PROPOSED, "t4")
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -152,7 +151,7 @@ diff.close_diff_by_tab_name("t6")
 
 -- 6. Pure deletion at end of file and at start.
 write(path, "one\ntwo\nthree\n")
-vim.cmd("edit " .. path)
+vim.cmd("silent edit " .. path)
 buf = vim.api.nvim_get_current_buf()
 result = open(path, "one\n", "t7")
 check(#lines(buf) == 1, "deletion at EOF applied")
@@ -163,7 +162,7 @@ check(table.concat(lines(buf), "\n") == "one\ntwo\nthree", "rejecting EOF deleti
 diff.close_diff_by_tab_name("t7")
 
 write(path, "one\ntwo\nthree\n")
-vim.cmd("edit!")
+vim.cmd("silent edit!")
 result = open(path, "three\n", "t8")
 check(virt_line_count(buf) == 2, "deletion at start previewed")
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -173,7 +172,7 @@ diff.close_diff_by_tab_name("t8")
 
 -- 7. Existing buffer-local mapping is restored after review.
 write(path, ORIGINAL)
-vim.cmd("edit!")
+vim.cmd("silent edit!")
 vim.keymap.set("n", "]c", "<cmd>echo 'gitsigns'<cr>", { buffer = buf })
 local user_map = vim.fn.maparg("]c", "n")
 result = open(path, PROPOSED, "t9")
